@@ -149,7 +149,9 @@ func parseComment(line string) (cmt string, rest string) {
 
 	ind := strings.Index(noq, ";")
 	if ind >= 0 {
-		cmt = strings.TrimSpace(line[ind+1:])
+		cmt = line[ind:]
+		cmt = strings.TrimPrefix(cmt, ";")
+		cmt = strings.TrimPrefix(cmt, " ")
 		rest = line[:ind]
 		return
 	}
@@ -198,7 +200,11 @@ func (l *asmLine) print(w io.Writer) {
 	}
 
 	if l.comment != "" {
+		comment := l.comment
 		if column != 0 {
+			// Trim trailing spaces if this is an inline comment.
+			comment = strings.TrimSpace(comment)
+
 			if column < commentIndent-1 {
 				w.Write(bytes.Repeat(space, commentIndent-column-1))
 			} else {
@@ -206,7 +212,7 @@ func (l *asmLine) print(w io.Writer) {
 			}
 		}
 		w.Write([]byte{';', ' '})
-		w.Write([]byte(l.comment))
+		w.Write([]byte(comment))
 	}
 
 	w.Write(newl)
