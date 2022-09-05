@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -29,6 +30,7 @@ func init() {
 type asmLine struct {
 	label   string
 	text    string
+	section string
 	comment string
 }
 
@@ -121,6 +123,25 @@ func parseLabel(line string) (lbl string, rest string) {
 	return "", line
 }
 
+var sectionRe = regexp.MustCompile(`(?i)\s*(section|segment)\s+([^;\s]*)`)
+
+func parseSection(line string) (section string, rest string) {
+	noq := noquotes(line, "x")
+
+	ind := sectionRe.FindStringSubmatchIndex(noq)
+	if ind != nil {
+		log.Printf("%#v", ind)
+		section = fmt.Sprintf("%s %s",
+			line[ind[2]:ind[3]],
+			line[ind[4]:ind[5]],
+		)
+		rest = line[ind[5]:]
+		return
+	}
+
+	return "", line
+}
+
 func parseComment(line string) (cmt string, rest string) {
 	noq := noquotes(line, "x")
 
@@ -141,6 +162,7 @@ func parseLine(line string) *asmLine {
 	l := &asmLine{}
 
 	l.comment, line = parseComment(line)
+	l.section, line = parseSection(line)
 	l.label, line = parseLabel(line)
 
 	l.text = strings.TrimSpace(line)
@@ -178,6 +200,11 @@ func (l *asmLine) print(w io.Writer) {
 		column += utf8.RuneCountInString(l.text)
 	}
 
+	if l.section != "" {
+		w.Write([]byte(l.section))
+		column += utf8.RuneCountInString(l.section)
+	}
+
 	if l.comment != "" {
 		comment := l.comment
 		if column != 0 {
@@ -197,6 +224,10 @@ func (l *asmLine) print(w io.Writer) {
 	}
 
 	w.Write(newl)
+
+	if l.section != "" {
+		w.Write(newl)
+	}
 }
 
 func formatto(filename, outname string) error {
@@ -230,6 +261,7 @@ func formatto(filename, outname string) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		asmLine := parseLine(line)
+		log.Printf("%#v", asmLine)
 		if lastEmpty && asmLine.empty() {
 			continue // Output no more than one empty line
 		}
