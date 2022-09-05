@@ -284,9 +284,12 @@ func (t DirectiveToken) String() string {
 }
 
 var pseudoKeywords = []string{
+	// How do these have different things?!
 	// https://www.tortall.net/projects/yasm/manual/html/nasm-pseudop.html
+	// https://github.com/hyqneuron/assembler/blob/master/doc/manual/nasm-language.txt#pseudo-instructions
+	// https://www.nasm.us/doc/nasmdoc3.html
 	"db", "dw", "dd", "dq", "dt", "ddq", "do",
-	"resb", "resw", "resd", "resq", "rest", "resdq", "reso",
+	"resb", "resw", "resd", "resq", "rest", "resdq", "reso", "resy", "resz",
 	"incbin",
 	"equ",
 	"times",
