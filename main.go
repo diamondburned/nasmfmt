@@ -122,17 +122,6 @@ func format(dst io.Writer, src io.Reader) error {
 			continue
 		}
 
-		if pseudo, ok := nasm.FindToken[nasm.PseudoToken](line.Tokens); ok {
-			if pseudo.Label == "" && nasm.HasToken[nasm.PseudoToken](iter.Before().Tokens) {
-				addToBlockN(line, 2)
-			} else {
-				newBlock()
-				addToBlock(line)
-				newBlock()
-			}
-			continue
-		}
-
 		addToBlock(line)
 	}
 
