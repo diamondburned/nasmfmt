@@ -103,19 +103,6 @@ func noquotes(s, rep string) string {
 	return string(outr)
 }
 
-var dataPseudos = compilePseudoes()
-
-func compilePseudoes() (ret []*regexp.Regexp) {
-	var (
-		raw = []string{"db", "dw", "dd", "dq", "ddq", "do", "dt"}
-		re  = `(?:\s|^)%v(?:\s|")`
-	)
-	for _, p := range raw {
-		ret = append(ret, regexp.MustCompile(fmt.Sprintf(re, p)))
-	}
-	return
-}
-
 func parseLabel(line string) (lbl string, rest string) {
 	noq := noquotes(line, "x")
 
@@ -129,16 +116,6 @@ func parseLabel(line string) (lbl string, rest string) {
 		}
 
 		return
-	}
-
-	for _, pseudo := range dataPseudos {
-		inds := pseudo.FindStringIndex(noq)
-		if len(inds) > 0 {
-			ind := inds[0]
-			lbl = strings.TrimSpace(line[:ind])
-			rest = line[ind:]
-			return
-		}
 	}
 
 	return "", line
@@ -174,7 +151,7 @@ func parseLine(line string) *asmLine {
 }
 
 func (l *asmLine) empty() bool {
-	return l.label == "" && l.text == "" && l.comment == ""
+	return *l == (asmLine{})
 }
 
 func (l *asmLine) print(w io.Writer) {
@@ -224,11 +201,11 @@ func (l *asmLine) print(w io.Writer) {
 
 func formatto(filename, outname string) error {
 	var file *os.File
-	var out *os.File
+	var outf *os.File
 
 	if filename == "-" {
 		file = os.Stdin
-		out = os.Stdout
+		outf = os.Stdout
 	} else {
 		var err error
 
@@ -238,12 +215,15 @@ func formatto(filename, outname string) error {
 		}
 		defer file.Close()
 
-		out, err = os.Create(outname)
+		outf, err = os.Create(outname)
 		if err != nil {
 			return err
 		}
-		defer out.Close()
+		defer outf.Close()
 	}
+
+	out := bufio.NewWriter(outf)
+	defer out.Flush()
 
 	scanner := bufio.NewScanner(file)
 	lastEmpty := false
@@ -256,6 +236,15 @@ func formatto(filename, outname string) error {
 		asmLine.print(out)
 		lastEmpty = asmLine.empty()
 	}
+
+	if err := out.Flush(); err != nil {
+		return err
+	}
+
+	if err := outf.Close(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
