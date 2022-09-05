@@ -286,7 +286,7 @@ func (t DirectiveToken) String() string {
 var pseudoKeywords = []string{
 	// https://www.tortall.net/projects/yasm/manual/html/nasm-pseudop.html
 	"db", "dw", "dd", "dq", "dt", "ddq", "do",
-	"resb", "resw", "resd", "resq", "rest", "resddq", "reso",
+	"resb", "resw", "resd", "resq", "rest", "resdq", "reso",
 	"incbin",
 	"equ",
 	"times",
