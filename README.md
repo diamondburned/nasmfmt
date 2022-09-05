@@ -17,7 +17,7 @@ Inspired by gofmt.
 ## Example
 
 ```asm
-lobal _start
+global _start
 
 
 section .text
