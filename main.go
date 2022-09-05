@@ -180,9 +180,10 @@ func writeBlock(dst io.Writer, block nasm.Lines) error {
 				indent = 1
 			}
 			s += strings.Repeat(" ", indent)
-		} else if i > 0 {
-			if len(block[i-1].Tokens) > 0 {
-				s += strings.Repeat(" ", strings.Index(lines[i-1], ";"))
+		} else if i > 0 && lines[i-1] != "" {
+			commentIx := strings.Index(nasm.NoQuotes(lines[i-1], "x"), ";")
+			if commentIx != -1 {
+				s += strings.Repeat(" ", commentIx)
 			}
 		}
 

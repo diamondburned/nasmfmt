@@ -19,17 +19,6 @@ var DefaultIndentOpts = IndentOpts{
 	Comment:     40,
 }
 
-type writeCounter struct {
-	w io.Writer
-	n int64
-}
-
-func (w *writeCounter) Write(b []byte) (int, error) {
-	n, err := w.w.Write(b)
-	w.n += int64(n)
-	return n, err
-}
-
 // Lines consists of multiple lines.
 type Lines []Line
 
@@ -169,7 +158,7 @@ type LabelToken struct {
 }
 
 func ParseLabelToken(line string) (Token, string) {
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	idx := strings.Index(noq, ":")
 	if idx == -1 {
@@ -200,7 +189,7 @@ var instrRe = regexp.MustCompile(`\s*(\w+)`)
 
 func ParseInstructionToken(line string) (Token, string) {
 	line = strings.TrimLeftFunc(line, unicode.IsSpace)
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	instrIdx := instrRe.FindStringSubmatchIndex(noq)
 	if instrIdx == nil {
@@ -239,7 +228,7 @@ type SectionToken struct {
 var sectionRe = regexp.MustCompile(`^(?i)\s*(section|segment)\s+([^;\s]*)\s*$`)
 
 func ParseSectionToken(line string) (Token, string) {
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	ind := sectionRe.FindStringSubmatchIndex(noq)
 	if ind == nil {
@@ -277,7 +266,7 @@ type DirectiveToken struct {
 }
 
 func ParseDirectiveToken(line string) (Token, string) {
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	ind := directiveRe.FindStringSubmatchIndex(noq)
 	if ind == nil {
@@ -315,7 +304,7 @@ type PseudoToken struct {
 }
 
 func ParsePseudoToken(line string) (Token, string) {
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	idx := pseudoRe.FindStringSubmatchIndex(noq)
 	if idx == nil {
@@ -338,7 +327,7 @@ type CommentToken struct {
 }
 
 func ParseCommentToken(line string) (Token, string) {
-	noq := noquotes(line, "x")
+	noq := NoQuotes(line, "x")
 
 	idx := strings.Index(noq, ";")
 	if idx == -1 {

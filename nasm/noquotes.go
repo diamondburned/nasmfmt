@@ -1,12 +1,12 @@
 package nasm
 
-// noquotes replaces all quoted parts of a string with provided replacement.
-// E.g. noquotes(`I'm "in love" with donuts`, "x") -> `I'm xxxxxxxxx with donuts`.
+// NoQuotes replaces all quoted parts of a string with provided replacement.
+// E.g. NoQuotes(`I'm "in love" with donuts`, "x") -> `I'm xxxxxxxxx with donuts`.
 //
 // It's useful for performing substring searches ignoring quotations.
-// Index of a substring in a 'noquotes' version with len(rep)==1
+// Index of a substring in a 'NoQuotes' version with len(rep)==1
 // would equal its index in original string.
-func noquotes(s, rep string) string {
+func NoQuotes(s, rep string) string {
 	sr := []rune(s)
 	repr := []rune(rep)
 	outr := []rune{}
