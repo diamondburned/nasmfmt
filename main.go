@@ -8,9 +8,11 @@ import (
 	"io"
 	"log"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strings"
-	"unicode/utf8"
+	"text/tabwriter"
+
+	"github.com/diamondburned/nasmfmt/v2/nasm"
 )
 
 var (
@@ -20,286 +22,208 @@ var (
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [params] [file1 [file2 ...]]\nParameters:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [params] [files...]\nParameters:\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.IntVar(&insIndent, "ii", 8, "Indentation for instructions in spaces")
 	flag.IntVar(&commentIndent, "ci", 40, "Indentation for comments in spaces")
 }
 
-type asmLine struct {
-	label   string
-	text    string
-	section string
-	comment string
-}
-
-var (
-	mulSpaces   = regexp.MustCompile(` +`)
-	commaSpaces = regexp.MustCompile(`, *`)
-)
-
-func indexRune(s []rune, rn rune) int {
-	for i := range s {
-		if s[i] == rn {
-			return i
-		}
-	}
-	return -1
-}
-
-func indexRuneAny(s []rune, any string) int {
-	anyr := []rune(any)
-	for i, rn := range s {
-		if indexRune(anyr, rn) >= 0 {
-			return i
-		}
-	}
-	return -1
-}
-
-func runesRepeat(rep []rune, count int) []rune {
-	ret := []rune{}
-	for i := 0; i < count; i++ {
-		ret = append(ret, rep...)
-	}
-	return ret
-}
-
-// noquotes replaces all quoted parts of a string with provided replacement.
-// E.g. noquotes(`I'm "in love" with donuts`, "x") -> `I'm xxxxxxxxx with donuts`.
-//
-// It's useful for performing substring searches ignoring quotations.
-// Index of a substring in a 'noquotes' version with len(rep)==1
-// would equal its index in original string.
-func noquotes(s, rep string) string {
-	sr := []rune(s)
-	repr := []rune(rep)
-	outr := []rune{}
-
-	for len(sr) > 0 {
-		// Find first quotation mark
-		ind := indexRuneAny(sr, `"'`)
-		if ind >= 0 {
-			quote := sr[ind]
-			// Find its pair
-			ind2 := ind + 1 + indexRune(sr[ind+1:], quote)
-			// If it has no pair - include it into output string and skip
-			if ind2 < ind+1 {
-				outr = append(outr, sr[:ind+1]...)
-				sr = sr[ind+1:]
-				continue
-			}
-			// If it's paired - replace it with reps
-			outr = append(outr, sr[:ind]...)
-			outr = append(outr, runesRepeat(repr, ind2-ind+1)...)
-			sr = sr[ind2+1:]
-		} else {
-			// If no quotation marks found -
-			// include the rest of input string and break the cycle.
-			outr = append(outr, sr...)
-			sr = nil
-		}
-	}
-
-	return string(outr)
-}
-
-func parseLabel(line string) (lbl string, rest string) {
-	noq := noquotes(line, "x")
-
-	ind := strings.Index(noq, ":")
-	if ind >= 0 {
-		lbl = strings.TrimSpace(line[:ind])
-		rest = line[ind+1:]
-
-		if strings.Contains(rest, "[") && strings.Contains(rest, "]") {
-			return "", line
-		}
-
-		return
-	}
-
-	return "", line
-}
-
-var sectionRe = regexp.MustCompile(`(?i)\s*(section|segment)\s+([^;\s]*)`)
-
-func parseSection(line string) (section string, rest string) {
-	noq := noquotes(line, "x")
-
-	ind := sectionRe.FindStringSubmatchIndex(noq)
-	if ind != nil {
-		log.Printf("%#v", ind)
-		section = fmt.Sprintf("%s %s",
-			line[ind[2]:ind[3]],
-			line[ind[4]:ind[5]],
-		)
-		rest = line[ind[5]:]
-		return
-	}
-
-	return "", line
-}
-
-func parseComment(line string) (cmt string, rest string) {
-	noq := noquotes(line, "x")
-
-	ind := strings.Index(noq, ";")
-	if ind >= 0 {
-		cmt = line[ind:]
-		cmt = strings.TrimPrefix(cmt, ";")
-		if cmt != " " {
-			cmt = strings.TrimPrefix(cmt, " ")
-		}
-		rest = line[:ind]
-		return
-	}
-	return "", line
-}
-
-func parseLine(line string) *asmLine {
-	l := &asmLine{}
-
-	l.comment, line = parseComment(line)
-	l.section, line = parseSection(line)
-	l.label, line = parseLabel(line)
-
-	l.text = strings.TrimSpace(line)
-	l.text = mulSpaces.ReplaceAllString(l.text, " ")
-	l.text = commaSpaces.ReplaceAllString(l.text, ", ")
-
-	return l
-}
-
-func (l *asmLine) empty() bool {
-	return *l == (asmLine{})
-}
-
-func (l *asmLine) print(w io.Writer) {
-	var (
-		space  = []byte{' '}
-		newl   = []byte{'\n'}
-		column = 0
-	)
-
-	if l.label != "" {
-		w.Write([]byte(l.label))
-		w.Write([]byte{':'})
-		column += utf8.RuneCountInString(l.label) + 1
-		if l.text != "" {
-			w.Write(newl)
-			column = 0
-		}
-	}
-
-	if l.text != "" {
-		w.Write(bytes.Repeat(space, insIndent))
-		w.Write([]byte(l.text))
-		column += insIndent
-		column += utf8.RuneCountInString(l.text)
-	}
-
-	if l.section != "" {
-		w.Write([]byte(l.section))
-		column += utf8.RuneCountInString(l.section)
-	}
-
-	if l.comment != "" {
-		comment := l.comment
-		if column != 0 {
-			// Trim trailing spaces if this is an inline comment.
-			comment = strings.TrimSpace(comment)
-
-			if column < commentIndent-1 {
-				w.Write(bytes.Repeat(space, commentIndent-column-1))
-			} else {
-				w.Write(space)
-			}
-		}
-		if comment != "" {
-			w.Write([]byte{';', ' '})
-			w.Write([]byte(comment))
-		}
-	}
-
-	w.Write(newl)
-
-	if l.section != "" {
-		w.Write(newl)
-	}
-}
-
-func formatto(filename, outname string) error {
-	var file *os.File
-	var outf *os.File
-
-	if filename == "-" {
-		file = os.Stdin
-		outf = os.Stdout
-	} else {
-		var err error
-
-		file, err = os.Open(filename)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		outf, err = os.Create(outname)
-		if err != nil {
-			return err
-		}
-		defer outf.Close()
-	}
-
-	out := bufio.NewWriter(outf)
-	defer out.Flush()
-
-	scanner := bufio.NewScanner(file)
-	lastEmpty := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		asmLine := parseLine(line)
-		log.Printf("%#v", asmLine)
-		if lastEmpty && asmLine.empty() {
-			continue // Output no more than one empty line
-		}
-		asmLine.print(out)
-		lastEmpty = asmLine.empty()
-	}
-
-	if err := out.Flush(); err != nil {
-		return err
-	}
-
-	if err := outf.Close(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func format(filename string) error {
-	outname := filename + "~"
-	if err := formatto(filename, outname); err != nil {
-		return err
-	}
-	if filename != "-" {
-		if err := os.Rename(outname, filename); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func main() {
 	flag.Parse()
-	files := flag.Args()
-	for _, fn := range files {
-		err := format(fn)
-		if err != nil {
-			fmt.Println(err)
+
+	if flag.NArg() == 0 {
+		flag.Usage()
+		return
+	}
+
+	for _, file := range flag.Args() {
+		if err := formatFile(file); err != nil {
+			log.Fatalf("cannot format file %q: %v", file, err)
 		}
 	}
+}
+
+func formatFile(file string) error {
+	if file == "-" {
+		return format(os.Stdout, os.Stdin)
+	}
+
+	src, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("cannot open: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.CreateTemp(filepath.Dir(file), ".~*"+filepath.Ext(file))
+	if err != nil {
+		return fmt.Errorf("cannot create temp: %w", err)
+	}
+	defer os.Remove(dst.Name())
+	defer dst.Close()
+
+	dstbuf := bufio.NewWriter(dst)
+	defer dstbuf.Flush()
+
+	if err := format(dstbuf, src); err != nil {
+		return err
+	}
+
+	if err := dstbuf.Flush(); err != nil {
+		return fmt.Errorf("cannot flush write buffer: %w", err)
+	}
+
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("cannot close written temp: %w", err)
+	}
+
+	if err := os.Rename(dst.Name(), file); err != nil {
+		return fmt.Errorf("cannot mv to commit write: %w", err)
+	}
+
+	return nil
+}
+
+func format(dst io.Writer, src io.Reader) error {
+	lines, err := nasm.ParseLines(src)
+	if err != nil {
+		return err
+	}
+
+	blocks := []nasm.Lines{nil}
+
+	newBlock := func() {
+		if blocks[len(blocks)-1] != nil {
+			blocks = append(blocks, nil)
+		}
+	}
+
+	addToBlockN := func(line nasm.Line, n int) {
+		blocks[len(blocks)-n] = append(blocks[len(blocks)-n], line)
+	}
+
+	addToBlock := func(line nasm.Line) {
+		addToBlockN(line, 1)
+	}
+
+	iter := nasm.NewLineIterator(lines)
+	for iter.Next() {
+		line := iter.Current()
+
+		if line.IsEmpty() {
+			newBlock()
+			continue
+		}
+
+		if nasm.HasToken[nasm.SectionToken](line.Tokens) {
+			newBlock()
+			addToBlock(line)
+			newBlock()
+			continue
+		}
+
+		if pseudo, ok := nasm.FindToken[nasm.PseudoToken](line.Tokens); ok {
+			if pseudo.Label == "" && nasm.HasToken[nasm.PseudoToken](iter.Before().Tokens) {
+				addToBlockN(line, 2)
+			} else {
+				newBlock()
+				addToBlock(line)
+				newBlock()
+			}
+			continue
+		}
+
+		addToBlock(line)
+	}
+
+	for _, block := range blocks {
+		if err := writeBlock(dst, block); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeBlock(dst io.Writer, block nasm.Lines) error {
+	lines := writeLinesNoComment(block)
+
+	var buf strings.Builder
+	tabw := tabwriter.NewWriter(&buf, 1, 0, 1, ' ', 0)
+
+	for _, line := range lines {
+		tabw.Write([]byte(line))
+		tabw.Write([]byte("\n"))
+	}
+
+	tabw.Flush()
+
+	// Ugly hack to add comments after we tab-align the columns before the
+	// comments are added. We're only doing this for the sake of keeping a fixed
+	// indentation before inline comments.
+	//
+	// I actually hate this so much.
+	lines = strings.Split(buf.String(), "\n")
+	for i, s := range lines {
+		if i >= len(block) {
+			break
+		}
+
+		line := block[i]
+		if line.Comment == (nasm.CommentToken{}) {
+			continue
+		}
+
+		if len(line.Tokens) > 0 {
+			indent := commentIndent - (len(s) + 1)
+			if indent < 1 {
+				indent = 1
+			}
+			s += strings.Repeat(" ", indent)
+		} else if i > 0 {
+			if len(block[i-1].Tokens) > 0 {
+				s += strings.Repeat(" ", strings.Index(lines[i-1], ";"))
+			}
+		}
+
+		s += line.Comment.String()
+		lines[i] = s
+	}
+
+	s := strings.Join(lines, "\n")
+	s += "\n"
+
+	_, err := dst.Write([]byte(s))
+	return err
+}
+
+func writeLinesNoComment(lines nasm.Lines) []string {
+	strs := make([]string, len(lines))
+
+	iter := nasm.NewLineIterator(lines)
+	for iter.Next() {
+		line := iter.Current()
+		if line.IsEmpty() {
+			continue
+		}
+
+		var b bytes.Buffer
+
+		for i, t := range line.Tokens {
+			_, instr := t.(nasm.InstructionToken)
+			if instr {
+				b.WriteString(strings.Repeat(" ", insIndent))
+			}
+
+			b.WriteString(t.String())
+
+			if i != len(line.Tokens)-1 {
+				b.WriteByte('\t')
+			}
+		}
+
+		strs[iter.LineNum()] = b.String()
+	}
+
+	return strs
 }
