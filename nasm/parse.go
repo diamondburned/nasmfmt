@@ -16,6 +16,13 @@ type Parser struct {
 	next *string
 }
 
+// NewParser returns a new Parser for the given reader.
+func NewParser(r io.Reader) *Parser {
+	return &Parser{
+		scan: bufio.NewScanner(r),
+	}
+}
+
 // PrevLine returns the previous line, if any.
 func (p *Parser) PrevLine() *Line {
 	if len(p.Lines) == 0 {
@@ -69,12 +76,10 @@ func (p *Parser) Err() error {
 
 // Parse parses multiple lines (i.e. a whole file).
 func Parse(r io.Reader) (Lines, error) {
-	parser := Parser{
-		scan: bufio.NewScanner(r),
-	}
+	parser := NewParser(r)
 
 	for lineIdx := 0; parser.Scan(); lineIdx++ {
-		line, err := parseLine(&parser)
+		line, err := parseLine(parser)
 		if err != nil {
 			return parser.Lines, fmt.Errorf("error at line %d: %w", lineIdx+1, err)
 		}

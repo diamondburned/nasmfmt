@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -197,26 +196,18 @@ func writeLinesNoComment(lines nasm.Lines) []string {
 			continue
 		}
 
-		var b bytes.Buffer
+		var s strings.Builder
 
 		if line.Token != nil {
 			_, instr := line.Token.(nasm.InstructionToken)
 			if instr {
-				b.WriteString(strings.Repeat(" ", insIndent))
+				s.WriteString(strings.Repeat(" ", insIndent))
 			}
 
-			b.WriteString(line.Token.String())
+			s.WriteString(line.Token.String())
 		}
 
-		if line.Comment != (nasm.CommentToken{}) {
-			if line.Token != nil {
-				b.WriteByte('\t')
-			}
-
-			b.WriteString(line.Comment.String())
-		}
-
-		strs[iter.LineNum()] = b.String()
+		strs[iter.LineNum()] = s.String()
 	}
 
 	return strs
