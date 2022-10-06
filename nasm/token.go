@@ -1,9 +1,7 @@
 package nasm
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 	"unicode"
@@ -22,22 +20,6 @@ var DefaultIndentOpts = IndentOpts{
 // Lines consists of multiple lines.
 type Lines []Line
 
-// ParseLines parses multiple lines (i.e. a whole file).
-func ParseLines(r io.Reader) (Lines, error) {
-	var lines Lines
-
-	scanner := bufio.NewScanner(r)
-	for lineIdx := 0; scanner.Scan(); lineIdx++ {
-		line, err := ParseLine(scanner.Text())
-		if err != nil {
-			return lines, fmt.Errorf("error at line %d: %w", lineIdx, err)
-		}
-		lines = append(lines, line)
-	}
-
-	return lines, scanner.Err()
-}
-
 func (ls Lines) String() string {
 	var b strings.Builder
 	for _, l := range ls {
@@ -49,48 +31,23 @@ func (ls Lines) String() string {
 
 // Line consists of multiple tokens.
 type Line struct {
-	Tokens  []Token
+	Token   Token
 	Comment CommentToken
 }
 
-// ParseLine parses a line.
-func ParseLine(line string) (Line, error) {
-	var tokens []Token
-
-	for _, parser := range TokenParsers {
-		var token Token
-		token, line = parser(line)
-
-		if token != nil {
-			tokens = append(tokens, token)
-		}
-
-		if line == "" {
-			break
-		}
-	}
-
-	if line != "" {
-		return Line{}, fmt.Errorf("excess text %q", line)
-	}
-
-	comment, tokens := PopToken[CommentToken](tokens)
-	return Line{
-		Tokens:  tokens,
-		Comment: comment,
-	}, nil
-}
-
 func (l Line) IsEmpty() bool {
-	return len(l.Tokens) == 0 && l.Comment == (CommentToken{})
+	return l.Token == nil && l.Comment == (CommentToken{})
 }
 
 // String formats a line.
 func (l Line) String() string {
 	var b strings.Builder
-	for _, t := range append(append([]Token(nil), l.Tokens...), l.Comment) {
-		b.WriteString(t.String())
+	if l.Token != nil {
+		b.WriteString(l.Token.String())
 		b.WriteByte('\t')
+	}
+	if l.Comment != (CommentToken{}) {
+		b.WriteString(l.Comment.String())
 	}
 	return strings.TrimSuffix(b.String(), "\t")
 }
@@ -102,53 +59,18 @@ type Token interface {
 
 func (CommentToken) token()     {}
 func (SectionToken) token()     {}
-func (DirectiveToken) token() {}
+func (DirectiveToken) token()   {}
 func (PseudoToken) token()      {}
 func (LabelToken) token()       {}
 func (InstructionToken) token() {}
 
-func HasToken[T Token](tokens []Token) bool {
-	for _, token := range tokens {
-		_, ok := token.(T)
-		if ok {
-			return true
-		}
-	}
-	return false
-}
-
-func FindToken[T Token](tokens []Token) (T, bool) {
-	for _, token := range tokens {
-		t, ok := token.(T)
-		if ok {
-			return t, true
-		}
-	}
-	var z T
-	return z, false
-}
-
-// PopToken pops the first token in the list that satisfies f(). The token is
-// returned along with a new slice that doesn't contain said token.
-func PopToken[T Token](tokens []Token) (T, []Token) {
-	for i, token := range tokens {
-		t, ok := token.(T)
-		if ok {
-			tokens = append(tokens[:i], tokens[i+1:]...)
-			return t, tokens
-		}
-	}
-	var z T
-	return z, tokens
-}
-
-type TokenParser func(line string) (Token, string)
+type TokenParser func(*Parser, string) (Token, string)
 
 var TokenParsers = []TokenParser{
-	ParseCommentToken, // trims end of line
-	ParseSectionToken, // matches whole line
+	ParseCommentToken,   // trims end of line
+	ParseSectionToken,   // matches whole line
 	ParseDirectiveToken, // matches whole line
-	ParsePseudoToken,  // matches whole line
+	ParsePseudoToken,    // matches whole line
 	ParseLabelToken,
 	ParseInstructionToken, // matches whole line
 }
@@ -157,7 +79,7 @@ type LabelToken struct {
 	Label string
 }
 
-func ParseLabelToken(line string) (Token, string) {
+func ParseLabelToken(parser *Parser, line string) (Token, string) {
 	noq := NoQuotes(line, "x")
 
 	idx := strings.Index(noq, ":")
@@ -187,7 +109,7 @@ type InstructionToken struct {
 
 var instrRe = regexp.MustCompile(`\s*(\w+)`)
 
-func ParseInstructionToken(line string) (Token, string) {
+func ParseInstructionToken(parser *Parser, line string) (Token, string) {
 	line = strings.TrimLeftFunc(line, unicode.IsSpace)
 	noq := NoQuotes(line, "x")
 
@@ -227,7 +149,7 @@ type SectionToken struct {
 // sectionRe matches whole line.
 var sectionRe = regexp.MustCompile(`^(?i)\s*(section|segment)\s+([^;\s]*)\s*$`)
 
-func ParseSectionToken(line string) (Token, string) {
+func ParseSectionToken(parser *Parser, line string) (Token, string) {
 	noq := NoQuotes(line, "x")
 
 	ind := sectionRe.FindStringSubmatchIndex(noq)
@@ -262,10 +184,10 @@ var directiveRe = regexp.MustCompile(fmt.Sprintf(
 
 type DirectiveToken struct {
 	Keyword string
-	Text string
+	Text    string
 }
 
-func ParseDirectiveToken(line string) (Token, string) {
+func ParseDirectiveToken(parser *Parser, line string) (Token, string) {
 	noq := NoQuotes(line, "x")
 
 	ind := directiveRe.FindStringSubmatchIndex(noq)
@@ -306,7 +228,7 @@ type PseudoToken struct {
 	Text  string
 }
 
-func ParsePseudoToken(line string) (Token, string) {
+func ParsePseudoToken(parser *Parser, line string) (Token, string) {
 	noq := NoQuotes(line, "x")
 
 	idx := pseudoRe.FindStringSubmatchIndex(noq)
@@ -329,7 +251,7 @@ type CommentToken struct {
 	Comment string
 }
 
-func ParseCommentToken(line string) (Token, string) {
+func ParseCommentToken(parser *Parser, line string) (Token, string) {
 	noq := NoQuotes(line, "x")
 
 	idx := strings.Index(noq, ";")

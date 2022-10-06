@@ -85,7 +85,7 @@ func formatFile(file string) error {
 }
 
 func format(dst io.Writer, src io.Reader) error {
-	lines, err := nasm.ParseLines(src)
+	lines, err := nasm.Parse(src)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func format(dst io.Writer, src io.Reader) error {
 			continue
 		}
 
-		if nasm.HasToken[nasm.SectionToken](line.Tokens) {
+		if _, ok := line.Token.(nasm.SectionToken); ok {
 			newBlock()
 			addToBlock(line)
 			newBlock()
@@ -163,7 +163,7 @@ func writeBlock(dst io.Writer, block nasm.Lines) error {
 			continue
 		}
 
-		if len(line.Tokens) > 0 {
+		if line.Token != nil {
 			indent := commentIndent - (len(s) + 1)
 			if indent < 1 {
 				indent = 1
@@ -199,17 +199,21 @@ func writeLinesNoComment(lines nasm.Lines) []string {
 
 		var b bytes.Buffer
 
-		for i, t := range line.Tokens {
-			_, instr := t.(nasm.InstructionToken)
+		if line.Token != nil {
+			_, instr := line.Token.(nasm.InstructionToken)
 			if instr {
 				b.WriteString(strings.Repeat(" ", insIndent))
 			}
 
-			b.WriteString(t.String())
+			b.WriteString(line.Token.String())
+		}
 
-			if i != len(line.Tokens)-1 {
+		if line.Comment != (nasm.CommentToken{}) {
+			if line.Token != nil {
 				b.WriteByte('\t')
 			}
+
+			b.WriteString(line.Comment.String())
 		}
 
 		strs[iter.LineNum()] = b.String()
