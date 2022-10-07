@@ -61,6 +61,7 @@ func (CommentToken) token()     {}
 func (SectionToken) token()     {}
 func (DirectiveToken) token()   {}
 func (PseudoToken) token()      {}
+func (MacroToken) token()       {}
 func (LabelToken) token()       {}
 func (InstructionToken) token() {}
 
@@ -71,6 +72,7 @@ var TokenParsers = []TokenParser{
 	ParseSectionToken,   // matches whole line
 	ParseDirectiveToken, // matches whole line
 	ParsePseudoToken,    // matches whole line
+	ParseMacroToken,     // matches whole line
 	ParseLabelToken,
 	ParseInstructionToken, // matches whole line
 }
@@ -269,4 +271,22 @@ func ParseCommentToken(parser *Parser, line string) (Token, string) {
 
 func (t CommentToken) String() string {
 	return "; " + t.Comment
+}
+
+type MacroToken struct {
+	Macro string
+}
+
+func ParseMacroToken(parser *Parser, line string) (Token, string) {
+	cleanLine := strings.TrimSpace(line)
+	if !strings.HasPrefix(cleanLine, "%") {
+		return nil, line
+	}
+	return MacroToken{
+		Macro: strings.TrimPrefix(cleanLine, "%"),
+	}, ""
+}
+
+func (t MacroToken) String() string {
+	return "%" + t.Macro
 }
