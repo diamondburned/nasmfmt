@@ -136,22 +136,14 @@ func format(dst io.Writer, src io.Reader) error {
 func writeBlock(dst io.Writer, block nasm.Lines) error {
 	lines := writeLinesNoComment(block)
 
-	var buf strings.Builder
-	tabw := tabwriter.NewWriter(&buf, 1, 0, 1, ' ', 0)
-
-	for _, line := range lines {
-		tabw.Write([]byte(line))
-		tabw.Write([]byte("\n"))
-	}
-
-	tabw.Flush()
+	// Vertical align the lines.
+	lines = strings.Split(valign(lines), "\n")
 
 	// Ugly hack to add comments after we tab-align the columns before the
 	// comments are added. We're only doing this for the sake of keeping a fixed
 	// indentation before inline comments.
 	//
 	// I actually hate this so much.
-	lines = strings.Split(buf.String(), "\n")
 	for i, s := range lines {
 		if i >= len(block) {
 			break
@@ -163,19 +155,16 @@ func writeBlock(dst io.Writer, block nasm.Lines) error {
 		}
 
 		if line.Token != nil {
-			var indent int
-
-			_, instr := line.Token.(nasm.InstructionToken)
-			if instr {
-				indent = commentIndent - (len(s) + 1)
+			switch line.Token.(type) {
+			case nasm.InstructionToken:
+				indent := commentIndent - (len(s) + 1)
 				if indent < 1 {
 					indent = 1
 				}
-			} else {
-				indent = 1
+				s += strings.Repeat(" ", indent)
+			default:
+				s += "\t"
 			}
-
-			s += strings.Repeat(" ", indent)
 		} else if i > 0 && lines[i-1] != "" {
 			commentIx := strings.Index(nasm.NoQuotes(lines[i-1], "x"), ";")
 			if commentIx != -1 {
@@ -187,10 +176,10 @@ func writeBlock(dst io.Writer, block nasm.Lines) error {
 		lines[i] = s
 	}
 
-	s := strings.Join(lines, "\n")
-	s += "\n"
+	// Re-vertically align the lines.
+	out := valign(lines)
 
-	_, err := dst.Write([]byte(s))
+	_, err := dst.Write([]byte(out))
 	return err
 }
 
@@ -219,4 +208,18 @@ func writeLinesNoComment(lines nasm.Lines) []string {
 	}
 
 	return strs
+}
+
+func valign(lines []string) string {
+	var buf strings.Builder
+	tabw := tabwriter.NewWriter(&buf, 1, 0, 1, ' ', 0)
+
+	for _, line := range lines {
+		tabw.Write([]byte(line))
+		tabw.Write([]byte("\n"))
+	}
+
+	tabw.Flush()
+
+	return buf.String()
 }

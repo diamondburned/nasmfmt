@@ -90,9 +90,8 @@ func ParseLabelToken(parser *Parser, line string) (Token, string) {
 	}
 
 	label := strings.TrimSpace(line[:idx])
-
-	rest := line[idx+1:]
-	if strings.Contains(rest, "[") && strings.Contains(rest, "]") {
+	rest := strings.TrimSpace(line[idx+1:])
+	if strings.Contains(rest, "[") || strings.Contains(rest, "]") {
 		return nil, line
 	}
 
@@ -109,7 +108,7 @@ type InstructionToken struct {
 	Args  []string
 }
 
-var instrRe = regexp.MustCompile(`\s*(\w+)`)
+var instrRe = regexp.MustCompile(`\s*(\S+)`)
 
 func ParseInstructionToken(parser *Parser, line string) (Token, string) {
 	line = strings.TrimLeftFunc(line, unicode.IsSpace)
