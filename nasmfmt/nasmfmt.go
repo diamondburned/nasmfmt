@@ -24,7 +24,7 @@ func Format(dst io.Writer, src io.Reader, cfg FormatConfig) error {
 		return err
 	}
 
-	var blocks []nasm.Lines
+	blocks := []nasm.Lines{nil} // slice of 1, intentionally nil!
 	addBlock := func() {
 		if blocks[len(blocks)-1] != nil {
 			blocks = append(blocks, nil)
