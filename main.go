@@ -4,14 +4,11 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
-	"text/tabwriter"
 
-	"github.com/diamondburned/nasmfmt/v2/nasm"
+	"github.com/diamondburned/nasmfmt/v2/nasmfmt"
 )
 
 var (
@@ -44,8 +41,13 @@ func main() {
 }
 
 func formatFile(file string) error {
+	cfg := nasmfmt.FormatConfig{
+		InstructionIndent: insIndent,
+		CommentIndent:     commentIndent,
+	}
+
 	if file == "-" {
-		return format(os.Stdout, os.Stdin)
+		return nasmfmt.Format(os.Stdout, os.Stdin, cfg)
 	}
 
 	src, err := os.Open(file)
@@ -64,7 +66,7 @@ func formatFile(file string) error {
 	dstbuf := bufio.NewWriter(dst)
 	defer dstbuf.Flush()
 
-	if err := format(dstbuf, src); err != nil {
+	if err := nasmfmt.Format(dstbuf, src, cfg); err != nil {
 		return err
 	}
 
@@ -81,145 +83,4 @@ func formatFile(file string) error {
 	}
 
 	return nil
-}
-
-func format(dst io.Writer, src io.Reader) error {
-	lines, err := nasm.Parse(src)
-	if err != nil {
-		return err
-	}
-
-	blocks := []nasm.Lines{nil}
-
-	newBlock := func() {
-		if blocks[len(blocks)-1] != nil {
-			blocks = append(blocks, nil)
-		}
-	}
-
-	addToBlockN := func(line nasm.Line, n int) {
-		blocks[len(blocks)-n] = append(blocks[len(blocks)-n], line)
-	}
-
-	addToBlock := func(line nasm.Line) {
-		addToBlockN(line, 1)
-	}
-
-	iter := nasm.NewLineIterator(lines)
-	for iter.Next() {
-		line := iter.Current()
-
-		if line.IsEmpty() {
-			newBlock()
-			continue
-		}
-
-		if _, ok := line.Token.(nasm.SectionToken); ok {
-			newBlock()
-			addToBlock(line)
-			newBlock()
-			continue
-		}
-
-		addToBlock(line)
-	}
-
-	for _, block := range blocks {
-		if err := writeBlock(dst, block); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func writeBlock(dst io.Writer, block nasm.Lines) error {
-	lines := writeLinesNoComment(block)
-
-	// Vertical align the lines.
-	lines = strings.Split(valign(lines), "\n")
-
-	// Ugly hack to add comments after we tab-align the columns before the
-	// comments are added. We're only doing this for the sake of keeping a fixed
-	// indentation before inline comments.
-	//
-	// I actually hate this so much.
-	for i, s := range lines {
-		if i >= len(block) {
-			break
-		}
-
-		line := block[i]
-		if line.Comment == (nasm.CommentToken{}) {
-			continue
-		}
-
-		if line.Token != nil {
-			switch line.Token.(type) {
-			case nasm.InstructionToken:
-				indent := commentIndent - (len(s) + 1)
-				if indent < 1 {
-					indent = 1
-				}
-				s += strings.Repeat(" ", indent)
-			default:
-				s += "\t"
-			}
-		} else if i > 0 && lines[i-1] != "" {
-			commentIx := strings.Index(nasm.NoQuotes(lines[i-1], "x"), ";")
-			if commentIx != -1 {
-				s += strings.Repeat(" ", commentIx)
-			}
-		}
-
-		s += line.Comment.String()
-		lines[i] = s
-	}
-
-	// Re-vertically align the lines.
-	out := valign(lines)
-
-	_, err := dst.Write([]byte(out))
-	return err
-}
-
-func writeLinesNoComment(lines nasm.Lines) []string {
-	strs := make([]string, len(lines))
-
-	iter := nasm.NewLineIterator(lines)
-	for iter.Next() {
-		line := iter.Current()
-		if line.IsEmpty() {
-			continue
-		}
-
-		var s strings.Builder
-
-		if line.Token != nil {
-			_, instr := line.Token.(nasm.InstructionToken)
-			if instr {
-				s.WriteString(strings.Repeat(" ", insIndent))
-			}
-
-			s.WriteString(line.Token.String())
-		}
-
-		strs[iter.LineNum()] = s.String()
-	}
-
-	return strs
-}
-
-func valign(lines []string) string {
-	var buf strings.Builder
-	tabw := tabwriter.NewWriter(&buf, 1, 0, 1, ' ', 0)
-
-	for _, line := range lines {
-		tabw.Write([]byte(line))
-		tabw.Write([]byte("\n"))
-	}
-
-	tabw.Flush()
-
-	return buf.String()
 }
